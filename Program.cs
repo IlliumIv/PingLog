@@ -11,11 +11,10 @@ using System.Threading.Tasks;
 
 namespace PingLog
 {
-    public static class Program
+    public class Program
     {
         public static readonly string Name = "pinglog";
-        public static string LogPath;
-        static int counter = 0;
+        public static bool DoWork = false;
 
         public static bool show_help = false;
         public static bool endless = false;
@@ -29,9 +28,18 @@ namespace PingLog
         public static string source_file;
         public static string destination_folder = Directory.GetCurrentDirectory();
 
+        public static List<(IPAddress Address, (ulong Sent, ulong Received, ulong Lost) MessagesCounter, List<long> RoundtripTimeValues)> Results;
+
+        private static CancellationTokenSource cts;
+
         static void Main(string[] args)
         {
+            Task main = MainAsync(args);
+            main.Wait();
+        }
 
+        private static async Task MainAsync(string[] args)
+        {
             #region args
             var p = new OptionSet() {
                 "Usage: pinglog [OPTIONS]+",
@@ -70,9 +78,11 @@ namespace PingLog
             List<string> extra;
 
             try { extra = p.Parse(args); }
-            catch (OptionException e) {
+            catch (OptionException e)
+            {
                 Console.Write($"{Name}: {e.Message} Try `pinglog --help' for more information.");
-                return; }
+                return;
+            }
 
             if (show_help || extra.Count == 0)
             {
@@ -80,73 +90,71 @@ namespace PingLog
                 return;
             }
 
-            new Task(async () =>
-            {
-                var t = new Task(() => ShowMessageAsync());
-                t.Start();
-                await t;
+            DoWork = true;
 
-            }).GetAwaiter().GetResult();
-
-            Console.ReadKey();
-        }
-
-        static void ShowMessageAsync()
-        {
-            for (int j = 0; j < 3; j++)
-            {
-                File.Create(LogPath + counter).Close();
-                Console.WriteLine($"I Work {counter}!");
-                File.AppendAllTextAsync(LogPath + counter, $"I Work {counter}!");
-                Thread.Sleep(1000);
-                Console.WriteLine($"I work again {counter}!");
-                File.AppendAllTextAsync(LogPath + counter, $"I work again {counter}!");
-                counter++;
-            }
-        }
-
-        private static async Task RunPinging(List<string> extra)
-        {
-            bool need_space = false;
+            List<PingTask> pingTasks = new List<PingTask>();
+            Results = new List<(IPAddress, (ulong, ulong, ulong), List<long>)>();
 
             foreach (string s in extra)
             {
-                if (need_space)
-                    Console.WriteLine("------------------------------");
-                need_space = true;
+                string output = $"Pinging {s}";
+                pingTasks.Add(new PingTask(s));
+            }
 
-                var t = new PingTask(s);
+            foreach (var t in pingTasks)
                 t.Run();
+
+            cts = new CancellationTokenSource();
+
+            while (Waiting(pingTasks).Result)
+            {
+
+                var keyInput = Console.ReadKey(true);
+
+                if (keyInput.Key == ConsoleKey.Escape)
+                {
+                    DoWork = false;
+                    Console.WriteLine("Escape was pressed, cancelling...");
+                    cts.Cancel();
+                }
+            }
+
+            DoWork = false;
+            await Task.Delay(100);
+
+            foreach (var r in Results)
+            {
+                if (r.MessagesCounter.Sent > 0)
+                {
+                    Console.WriteLine("------------------------------");
+
+                    Console.WriteLine($"\tPackages to {r.Address}:" +
+                        $"\n\t\tSent = {r.MessagesCounter.Sent}" +
+                        $", Received = {r.MessagesCounter.Received}" +
+                        $", Lost = {r.MessagesCounter.Lost}" +
+                        $", ({r.MessagesCounter.Lost / r.MessagesCounter.Sent * 100}% loss)");
+
+                    if (r.RoundtripTimeValues.Count > 0)
+                        Console.WriteLine($"\tTime-outs to {r.Address}:" +
+                            $"\n\t\tMinimum = {r.RoundtripTimeValues.Min()}ms" +
+                            $", Maximum = {r.RoundtripTimeValues.Max()}ms" +
+                            $", Average = {r.RoundtripTimeValues.Average()}ms");
+                }
             }
         }
 
-        public static string SplitCamelCase(string input)
+        static async Task<bool> Waiting(List<PingTask> pingTasks)
         {
-            return System.Text.RegularExpressions.Regex.Replace(input, "([A-Z])", " $1", System.Text.RegularExpressions.RegexOptions.Compiled).Trim();
-        }
+            while (pingTasks.Count > 0)
+            {
+                foreach (PingTask pingTask in pingTasks.Where(t => t.IsFinished() == true))
+                    Results.Add(pingTask.GetResults());
 
-        public static string GetaAllMessages(this Exception exception)
-        {
-            var messages = exception.FromHierarchy(ex => ex.InnerException)
-                .Select(ex => ex.Message);
-            return String.Join(" ", messages);
-        }
+                pingTasks.RemoveAll(t => t.IsFinished() == true);
+                await Task.Delay(500);
+            }
 
-        public static IEnumerable<TSource> FromHierarchy<TSource>(
-            this TSource source,
-            Func<TSource, TSource> nextItem,
-            Func<TSource, bool> canContinue)
-        {
-            for (var current = source; canContinue(current); current = nextItem(current))
-                yield return current;
-        }
-
-        public static IEnumerable<TSource> FromHierarchy<TSource>(
-            this TSource source,
-            Func<TSource, TSource> nextItem)
-            where TSource : class
-        {
-            return FromHierarchy(source, nextItem, s => s != null);
+            return false;
         }
     }
 }
