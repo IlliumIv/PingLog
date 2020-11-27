@@ -62,10 +62,10 @@ namespace PingLog
                 case false:
                     for (ulong i = 0; i < Program.max_messages; i++)
                     {
-                        Send(pingSender, buffer, options);
-
                         if (Program.DoWork == false)
                             break;
+
+                        Send(pingSender, buffer, options);
 
                         if (i + 1 != Program.max_messages)
                             await Task.Delay(Program.request_timeout);
@@ -89,6 +89,7 @@ namespace PingLog
                     break;
             }
 
+            // Console.WriteLine($"{Program.DoWork} {isFinished} {results}");
         }
 
         public bool IsFinished()

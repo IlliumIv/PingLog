@@ -30,8 +30,6 @@ namespace PingLog
 
         public static List<(IPAddress Address, (ulong Sent, ulong Received, ulong Lost) MessagesCounter, List<long> RoundtripTimeValues)> Results;
 
-        private static CancellationTokenSource cts;
-
         static void Main(string[] args)
         {
             Task main = MainAsync(args);
@@ -104,22 +102,32 @@ namespace PingLog
             foreach (var t in pingTasks)
                 t.Run();
 
-            cts = new CancellationTokenSource();
+            ConsoleKeyInfo input;
 
-            while (Waiting(pingTasks).Result)
+            while (DoWork && pingTasks.Count > 0) 
             {
+                input = Console.ReadKey(true);
 
-                var keyInput = Console.ReadKey(true);
-
-                if (keyInput.Key == ConsoleKey.Escape)
-                {
+                if (input != null)
                     DoWork = false;
-                    Console.WriteLine("Escape was pressed, cancelling...");
-                    cts.Cancel();
-                }
+
+                // await Task.Delay(500);
+
+                foreach (PingTask pingTask in pingTasks.Where(t => t.IsFinished() == true))
+                    Results.Add(pingTask.GetResults());
+
+                pingTasks.RemoveAll(t => t.IsFinished() == true);
             }
 
-            DoWork = false;
+            while (pingTasks.Count > 0)
+            {
+                foreach (PingTask pingTask in pingTasks.Where(t => t.IsFinished() == true))
+                    Results.Add(pingTask.GetResults());
+
+                pingTasks.RemoveAll(t => t.IsFinished() == true);
+                // await Task.Delay(500);
+            }
+
             await Task.Delay(100);
 
             foreach (var r in Results)
@@ -141,20 +149,6 @@ namespace PingLog
                             $", Average = {r.RoundtripTimeValues.Average()}ms");
                 }
             }
-        }
-
-        static async Task<bool> Waiting(List<PingTask> pingTasks)
-        {
-            while (pingTasks.Count > 0)
-            {
-                foreach (PingTask pingTask in pingTasks.Where(t => t.IsFinished() == true))
-                    Results.Add(pingTask.GetResults());
-
-                pingTasks.RemoveAll(t => t.IsFinished() == true);
-                await Task.Delay(500);
-            }
-
-            return false;
         }
     }
 }
