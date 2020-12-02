@@ -11,125 +11,75 @@ namespace PingLog
 {
     public class PingTask
     {
-        private (ulong Sent, ulong Received, ulong Lost) messages_counter = (0, 0, 0);
-        private List<long> roundtripTime_values = new List<long>();
-        public IPAddress address;
-
         private bool isFinished = false;
-        private (IPAddress, (ulong, ulong, ulong), List<long>) results;
+        private (IPAddress address, (ulong Sent, ulong Received, ulong Lost) messages_counter, List<long> roundtripTime_values) results;
         private string log;
 
-        public bool Create(string s)
+        public PingTask(string s)
         {
-            try
-            {
-                string output = $"Pinging {s}";
+            string output = $"Pinging {s}";
 
-                if (IPAddress.TryParse(s, out address)) ;
-                else
-                {
-                    try
-                    {
-                        IPHostEntry hostEntry = Dns.GetHostEntry(s);
+            if (IPAddress.TryParse(s, out IPAddress address)) { }
+            else {
+                try {
+                    IPHostEntry hostEntry = Dns.GetHostEntry(s);
 
-                        if (Program.protocol != AddressFamily.Unspecified)
-                            address = hostEntry.AddressList.First(a => a.AddressFamily == Program.protocol);
-                        else address = hostEntry.AddressList.First();
+                    if (Program.protocol != AddressFamily.Unspecified)
+                        address = hostEntry.AddressList.First(a => a.AddressFamily == Program.protocol);
+                    else address = hostEntry.AddressList.First(); }
 
-                        output += $" [{address}]";
-                    }
-                    catch (Exception e)
-                    {
-                        Console.WriteLine($"{output} failed: {e.GetaAllMessages()}");
-                        isFinished = true;
-                        return false;
-                    }
-                }
+                catch (Exception e) {
+                    Console.WriteLine($"{output} failed: {e.Message}");
 
-                if (address.ToString().Length > Program.AddressFieldWidth)
-                    Program.AddressFieldWidth = address.ToString().Length;
+                    isFinished = true;
 
-                output += $" with {Program.size} bytes of data:";
-                Console.WriteLine(output);
+                    return; } }
 
-                return true;
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine($"{e.Message}\n{e.StackTrace}");
-                isFinished = true;
-                Program.pingTasks.RemoveAll(t => t == this);
-                if (Program.pingTasks.Count == 0) Program.DoWork = false;
-                Console.WriteLine($"{e.Message}\n{e.StackTrace}");
+            Console.WriteLine($"{output} [{address}] with {Program.size} bytes of data...");
 
-                return false;
-            }
+            results = (address, (0, 0, 0), new List<long>());
+
+            if (address.ToString().Length > Program.AddressFieldWidth)
+                Program.AddressFieldWidth = address.ToString().Length;
         }
 
         public async Task Run()
         {
-            try
-            {
-                if (Program.destination_folder != null)
-                {
-                    log = $"ping_[{address}]_{DateTime.Now}".Replace(" ", "_");
-                    log = String.Join(".", log.Split(Path.GetInvalidFileNameChars()));
-                    log = Path.Combine(Program.destination_folder + $"\\{log}.csv");
+            if (Program.destination_folder != null) {
+                log = $"ping_[{results.address}]_{DateTime.Now}".Replace(" ", "_");
+                log = String.Join(".", log.Split(Path.GetInvalidFileNameChars()));
+                log = Path.Combine(Program.destination_folder + $"\\{log}.csv");
 
-                    var dir = new FileInfo(log).Directory.FullName;
+                var dir = new FileInfo(log).Directory.FullName;
 
-                    if (!Directory.Exists(dir))
-                        Directory.CreateDirectory(dir);
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
-                    File.Create(log).Close();
-                    File.AppendAllText(log, $"Date;{address};Bytes;Time;TTL");
-                }
+                File.Create(log).Close();
+                File.AppendAllText(log, $"Date;{results.address};Bytes;Time;TTL"); }
 
-                byte[] buffer = new byte[Program.size];
-                PingOptions options = new PingOptions(Program.max_ttl, Program.dont_fragment);
+            byte[] buffer = new byte[Program.size];
+            PingOptions options = new PingOptions(Program.max_ttl, Program.dont_fragment);
+            Ping pingSender = new Ping();
 
-                Ping pingSender = new Ping();
+            switch (Program.endless) {
+                case false:
+                    for (ulong i = 0; i < Program.max_messages; i++) {
+                        if (Program.DoWork == false) break;
 
-                switch (Program.endless)
-                {
-                    case false:
-                        for (ulong i = 0; i < Program.max_messages; i++)
-                        {
-                            if (Program.DoWork == false) break;
+                        Send(pingSender, buffer, options);
 
-                            Send(pingSender, buffer, options);
+                        if (i + 1 != Program.max_messages) await Task.Delay(Program.request_timeout); } break;
 
-                            if (i + 1 != Program.max_messages)
-                                await Task.Delay(Program.request_timeout);
-                        }
-                        isFinished = true;
-                        results = (address, messages_counter, roundtripTime_values);
+                case true:
+                    while (Program.DoWork) {
+                        Send(pingSender, buffer, options);
 
-                        break;
+                        await Task.Delay(Program.request_timeout); } break; }
 
-                    case true:
-                        while (Program.DoWork)
-                        {
-                            Send(pingSender, buffer, options);
-                            await Task.Delay(Program.request_timeout);
-                        }
-                        isFinished = true;
-                        results = (address, messages_counter, roundtripTime_values);
+            isFinished = true;
 
-                        break;
-                }
-
-                Program.Results.Add(GetResults());
-                Program.pingTasks.RemoveAll(t => t == this);
-                if (Program.pingTasks.Count == 0) Program.DoWork = false;
-            }
-            catch (Exception e)
-            {
-                isFinished = true;
-                Program.pingTasks.RemoveAll(t => t == this);
-                if (Program.pingTasks.Count == 0) Program.DoWork = false;
-                Console.WriteLine($"{e.Message}\n{e.StackTrace}");
-            }
+            Program.Results.Add(GetResults());
+            Program.pingTasks.RemoveAll(t => t.IsFinished());
         }
 
         public bool IsFinished()
@@ -144,69 +94,45 @@ namespace PingLog
 
         private async Task Send(Ping pingSender, byte[] buffer, PingOptions options)
         {
-            try
-            {
-                PingReply reply;
-                string console_output = $"{DateTime.Now}\t";
-                string log_output = $"{DateTime.Now};";
-                messages_counter.Sent++;
+            PingReply reply;
+            string console_output = $"{DateTime.Now}\t";
+            string log_output = $"{DateTime.Now};";
+            results.messages_counter.Sent++;
 
-                try
-                {
-                    reply = pingSender.Send(address, Program.response_timeout, buffer, options);
+            try {
+                reply = pingSender.Send(results.address, Program.response_timeout, buffer, options);
 
-                    if (reply.Status == IPStatus.Success)
-                    {
-                        messages_counter.Received++;
-                        roundtripTime_values.Add(reply.RoundtripTime);
+                if (reply.Status == IPStatus.Success) {
+                    results.messages_counter.Received++;
+                    results.roundtripTime_values.Add(reply.RoundtripTime);
+                    console_output += $"Reply from {results.address.ToString().PadRight(Program.AddressFieldWidth)}:" +
+                                $"\tbytes={reply.Buffer.Length}" +
+                                $"\ttime={reply.RoundtripTime}ms";
+                    log_output += $"Reply from {results.address} received" +
+                                $";{reply.Buffer.Length}" +
+                                $";{reply.RoundtripTime}";
 
-                        console_output += $"Reply from {address.ToString().PadRight(Program.AddressFieldWidth)}:" +
-                                    $"\tbytes={reply.Buffer.Length}" +
-                                    $"\ttime={reply.RoundtripTime}ms";
-                        log_output += $"Reply from {address} received" +
-                                    $";{reply.Buffer.Length}" +
-                                    $";{reply.RoundtripTime}";
+                    if (results.address.AddressFamily == AddressFamily.InterNetwork) {
+                        console_output += $"\tTTL={reply.Options.Ttl}";
+                        log_output += $";{reply.Options.Ttl}"; } }
+                else {
+                    console_output += $"Reply from {results.address.ToString().PadRight(Program.AddressFieldWidth)}:" +
+                        $"\t{reply.Status.ToString().SplitCamelCase()}";
+                    log_output += $";{reply.Status.ToString().SplitCamelCase()}";
 
-                        if (address.AddressFamily == AddressFamily.InterNetwork)
-                        {
-                            console_output += $"\tTTL={reply.Options.Ttl}";
-                            log_output += $";{reply.Options.Ttl}";
-                        }
-                    }
-                    else
-                    {
-                        console_output += $"Reply from {address.ToString().PadRight(Program.AddressFieldWidth)}:" +
-                            $"\t{reply.Status.ToString().SplitCamelCase()}";
-                        log_output += $";{reply.Status.ToString().SplitCamelCase()}";
+                    if (reply.Status == IPStatus.TimedOut) {
+                        console_output += $"\ttime={Program.response_timeout}ms";
+                        log_output += $";{Program.response_timeout}"; }
 
-                        if (reply.Status == IPStatus.TimedOut)
-                        {
-                            console_output += $"\ttime={Program.response_timeout}ms";
-                            log_output += $";{Program.response_timeout}";
-                        }
+                    results.messages_counter.Lost++; } }
 
-                        messages_counter.Lost++;
-                    }
-                }
-                catch (PingException e)
-                {
-                    console_output += e.GetaAllMessages();
-                    log_output += $";{e.GetaAllMessages()}";
-                    messages_counter.Lost++;
-                }
+            catch (PingException e) {
+                console_output += e.GetaAllMessages();
+                log_output += $";{e.GetaAllMessages()}";
+                results.messages_counter.Lost++; }
 
-                if (Program.destination_folder != null)
-                    File.AppendAllTextAsync(log, "\n" + log_output);
-
-                Console.WriteLine(console_output);
-            }
-            catch (Exception e)
-            {
-                isFinished = true;
-                Program.pingTasks.RemoveAll(t => t == this);
-                if (Program.pingTasks.Count == 0) Program.DoWork = false;
-                Console.WriteLine($"{e.Message}\n{e.StackTrace}");
-            }
+            if (Program.destination_folder != null) File.AppendAllTextAsync(log, "\n" + log_output);
+            if (!Program.hide_output) Console.WriteLine(console_output);
         }
     }
 }

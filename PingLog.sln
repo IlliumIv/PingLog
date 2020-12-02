@@ -3,7 +3,12 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
 VisualStudioVersion = 16.0.30621.155
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PingLog", "PingLog.csproj", "{8019564E-9845-4DC0-B5C8-85AF3224F709}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PingLog", "PingLog.csproj", "{8019564E-9845-4DC0-B5C8-85AF3224F709}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{EC101024-7389-49C9-A5E5-7663C337F7E9}"
+	ProjectSection(SolutionItems) = preProject
+		.editorconfig = .editorconfig
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

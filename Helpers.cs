@@ -5,11 +5,12 @@ using System.Text;
 
 namespace PingLog
 {
-    public static class ExceptionHelper
+    public static class Helpers
     {
         public static string SplitCamelCase(this string input)
         {
-            return System.Text.RegularExpressions.Regex.Replace(input, "([A-Z])", " $1", System.Text.RegularExpressions.RegexOptions.Compiled).Trim();
+            return System.Text.RegularExpressions.Regex
+                .Replace(input, "([A-Z])", " $1", System.Text.RegularExpressions.RegexOptions.Compiled).Trim();
         }
 
         public static string GetaAllMessages(this Exception exception)
