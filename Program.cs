@@ -11,7 +11,6 @@ namespace PingLog
 {
     public class Program
     {
-        public static readonly string Name = "pinglog";
         public static bool DoWork = false;
 
         public static bool show_help = false;       //Implemented
@@ -33,6 +32,7 @@ namespace PingLog
         public static int AddressFieldWidth = 0;
         public static List<PingTask> pingTasks;
 
+        private static readonly string Name = "pinglog";
         private static bool results_showed;
         private static List<string> extra;
 
