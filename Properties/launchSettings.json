@@ -1,7 +1,8 @@
 {
   "profiles": {
     "PingLog": {
-      "commandName": "Project"
+      "commandName": "Project",
+      "commandLineArgs": "127.0.0.1 ::1 /t"
     }
   }
 }

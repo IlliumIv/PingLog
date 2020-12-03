@@ -12,7 +12,6 @@ namespace PingLog
     public class PingTask
     {
         private bool isFinished = false;
-        private (IPAddress address, (ulong Sent, ulong Received, ulong Lost) messages_counter, List<long> roundtripTime_values) results;
         private string log;
 
         public PingTask(string s)
@@ -37,7 +36,7 @@ namespace PingLog
 
             Console.WriteLine($"{output} [{address}] with {Program.size} bytes of data...");
 
-            results = (address, (0, 0, 0), new List<long>());
+            Program.Results.Add(GetHashCode(), (address, new Dictionary<string, ulong> { { "Sent", 0 }, { "Received", 0 }, { "Lost", 0 } } , new List<long>()));
 
             if (address.ToString().Length > Program.AddressFieldWidth)
                 Program.AddressFieldWidth = address.ToString().Length;
@@ -45,8 +44,10 @@ namespace PingLog
 
         public async Task Run()
         {
+            var i = GetHashCode();
+
             if (Program.destination_folder != null) {
-                log = $"ping_[{results.address}]_{DateTime.Now}".Replace(" ", "_");
+                log = $"ping_[{Program.Results[i].Address}]_{DateTime.Now}".Replace(" ", "_");
                 log = String.Join(".", log.Split(Path.GetInvalidFileNameChars()));
                 log = Path.Combine(Program.destination_folder + $"\\{log}.csv");
 
@@ -55,7 +56,7 @@ namespace PingLog
                 if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
                 File.Create(log).Close();
-                File.AppendAllText(log, $"Date;{results.address};Bytes;Time;TTL"); }
+                File.AppendAllText(log, $"Date;{Program.Results[i].Address};Bytes;Time;TTL"); }
 
             byte[] buffer = new byte[Program.size];
             PingOptions options = new PingOptions(Program.max_ttl, Program.dont_fragment);
@@ -63,12 +64,12 @@ namespace PingLog
 
             switch (Program.endless) {
                 case false:
-                    for (ulong i = 0; i < Program.max_messages; i++) {
+                    for (ulong j = 0; j < Program.max_messages; j++) {
                         if (Program.DoWork == false) break;
 
                         Send(pingSender, buffer, options);
 
-                        if (i + 1 != Program.max_messages) await Task.Delay(Program.request_timeout); } break;
+                        if (j + 1 != Program.max_messages) await Task.Delay(Program.request_timeout); } break;
 
                 case true:
                     while (Program.DoWork) {
@@ -77,9 +78,6 @@ namespace PingLog
                         await Task.Delay(Program.request_timeout); } break; }
 
             isFinished = true;
-
-            Program.Results.Add(GetResults());
-            Program.pingTasks.RemoveAll(t => t.IsFinished());
         }
 
         public bool IsFinished()
@@ -87,49 +85,55 @@ namespace PingLog
             return isFinished;
         }
 
+        /*
         public (IPAddress, (ulong, ulong, ulong), List<long>) GetResults()
         {
             return results;
         }
+        */
 
-        private async Task Send(Ping pingSender, byte[] buffer, PingOptions options)
+        private void Send(Ping pingSender, byte[] buffer, PingOptions options)
         {
+            var i = GetHashCode();
+
             PingReply reply;
             string console_output = $"{DateTime.Now}\t";
             string log_output = $"{DateTime.Now};";
-            results.messages_counter.Sent++;
+
+            Program.Results[i].MessagesCounter["Sent"]++;
+            Program.Results[i].MessagesCounter["Lost"]++;
 
             try {
-                reply = pingSender.Send(results.address, Program.response_timeout, buffer, options);
+                reply = pingSender.Send(Program.Results[i].Address, Program.response_timeout, buffer, options);
+
+                // Console.WriteLine(reply.Status);
 
                 if (reply.Status == IPStatus.Success) {
-                    results.messages_counter.Received++;
-                    results.roundtripTime_values.Add(reply.RoundtripTime);
-                    console_output += $"Reply from {results.address.ToString().PadRight(Program.AddressFieldWidth)}:" +
+                    Program.Results[i].MessagesCounter["Received"]++;
+                    Program.Results[i].MessagesCounter["Lost"]--;
+                    Program.Results[i].RoundtripTimeValues.Add(reply.RoundtripTime);
+                    console_output += $"Reply from {Program.Results[i].Address.ToString().PadRight(Program.AddressFieldWidth)}:" +
                                 $"\tbytes={reply.Buffer.Length}" +
                                 $"\ttime={reply.RoundtripTime}ms";
-                    log_output += $"Reply from {results.address} received" +
+                    log_output += $"Reply from {Program.Results[i].Address} received" +
                                 $";{reply.Buffer.Length}" +
                                 $";{reply.RoundtripTime}";
 
-                    if (results.address.AddressFamily == AddressFamily.InterNetwork) {
+                    if (Program.Results[i].Address.AddressFamily == AddressFamily.InterNetwork) {
                         console_output += $"\tTTL={reply.Options.Ttl}";
                         log_output += $";{reply.Options.Ttl}"; } }
                 else {
-                    console_output += $"Reply from {results.address.ToString().PadRight(Program.AddressFieldWidth)}:" +
+                    console_output += $"Reply from {Program.Results[i].Address.ToString().PadRight(Program.AddressFieldWidth)}:" +
                         $"\t{reply.Status.ToString().SplitCamelCase()}";
                     log_output += $";{reply.Status.ToString().SplitCamelCase()}";
 
                     if (reply.Status == IPStatus.TimedOut) {
                         console_output += $"\ttime={Program.response_timeout}ms";
-                        log_output += $";{Program.response_timeout}"; }
-
-                    results.messages_counter.Lost++; } }
+                        log_output += $";{Program.response_timeout}"; } } }
 
             catch (PingException e) {
                 console_output += e.GetaAllMessages();
-                log_output += $";{e.GetaAllMessages()}";
-                results.messages_counter.Lost++; }
+                log_output += $";{e.GetaAllMessages()}"; }
 
             if (Program.destination_folder != null) File.AppendAllTextAsync(log, "\n" + log_output);
             if (!Program.hide_output) Console.WriteLine(console_output);

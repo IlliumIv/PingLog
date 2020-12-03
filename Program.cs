@@ -28,12 +28,12 @@ namespace PingLog
         public static string? destination_folder;   //Implemented
 #nullable disable
 
-        public static List<(IPAddress Address, (ulong Sent, ulong Received, ulong Lost) MessagesCounter, List<long> RoundtripTimeValues)> Results;
+        // public static Dictionary<int, (IPAddress Address, (ulong Sent, ulong Received, ulong Lost) MessagesCounter, List<long> RoundtripTimeValues)> Results;
+        public static Dictionary<int, (IPAddress Address, Dictionary<string, ulong> MessagesCounter, List<long> RoundtripTimeValues)> Results;
         public static int AddressFieldWidth = 0;
         public static List<PingTask> pingTasks;
 
         private static readonly string Name = "pinglog";
-        private static bool results_showed;
         private static List<string> extra;
 
         static void Main(string[] args)
@@ -97,65 +97,45 @@ namespace PingLog
             if (endless) Console.WriteLine($"Key t specified. {Name} will continue sending echo Request messages to the destination until interrupted. To interrupt, display statistics and quit, press CTRL+C.\n");
 
             pingTasks = new List<PingTask>();
-            Results = new List<(IPAddress, (ulong, ulong, ulong), List<long>)>();
             DoWork = true;
+
+            Results = new Dictionary<int, (IPAddress Address, Dictionary<string, ulong> MessagesCounter, List<long> RoundtripTimeValues)>();
 
             foreach (string s in extra) pingTasks.Add(new PingTask(s));
             pingTasks.RemoveAll(t => t.IsFinished());
             foreach (var t in pingTasks) { new Task(async () => t.Run()).Start(); }
 
-            Close(false);
+            bool pinging = true;
+            while (pinging) {
+                if (pingTasks.Where(t => !t.IsFinished()).ToList().Count == 0)
+                    pinging = false;
+                Task.Delay(100); }
+
+            ShowResults();
         }
 
         private static void Console_CancelKeyPress(object sender, ConsoleCancelEventArgs e)
         {
-            if (e.SpecialKey == ConsoleSpecialKey.ControlC) {
-                Console.WriteLine("Canceled. Waiting last packages...");
-
-                DoWork = false;
-
-                Close(true);
-
-                while (!results_showed) Task.Delay(100); }
-
-            if (e.SpecialKey == ConsoleSpecialKey.ControlBreak) {
-                ShowResults();
-                e.Cancel = true; }
-        }
-
-        private static void Close(bool isCanceled)
-        {
-            while (pingTasks.Count > 0) Task.Delay(100);
-            if (isCanceled) return;
-
-            ShowResults();
-
-            results_showed = true;
+            e.Cancel = true;
+            if (e.SpecialKey == ConsoleSpecialKey.ControlC) DoWork = false;
+            if (e.SpecialKey == ConsoleSpecialKey.ControlBreak) ShowResults();
         }
 
         private static void ShowResults()
         {
-            var results = Results;
+            foreach (var kv in Results)
+                if (kv.Value.MessagesCounter["Sent"] > 0) {
+                    Console.WriteLine($"\tPackages to {kv.Value.Address}:" +
+                        $"\n\t\tSent = {kv.Value.MessagesCounter["Sent"]}" +
+                        $", Received = {kv.Value.MessagesCounter["Received"]}" +
+                        $", Lost = {kv.Value.MessagesCounter["Lost"]}" +
+                        ", ({0:0.##}% loss)", ((float)kv.Value.MessagesCounter["Lost"] / (float)kv.Value.MessagesCounter["Sent"]) * 100);
 
-            foreach (var t in pingTasks)
-                results.Add(t.GetResults());
-
-            if (results.Count > 0)
-                foreach (var (Address, MessagesCounter, RoundtripTimeValues) in results) {
-                    Console.WriteLine();
-
-                    if (MessagesCounter.Sent > 0) {
-                        Console.WriteLine($"\tPackages to {Address}:" +
-                            $"\n\t\tSent = {MessagesCounter.Sent}" +
-                            $", Received = {MessagesCounter.Received}" +
-                            $", Lost = {MessagesCounter.Lost}" +
-                            ", ({0:0.##}% loss)", ((float)MessagesCounter.Lost / (float)MessagesCounter.Sent) * 100);
-
-                        if (RoundtripTimeValues.Count > 0)
-                            Console.WriteLine($"\tTime-outs to {Address}:" +
-                                $"\n\t\tMinimum = {RoundtripTimeValues.Min()}ms" +
-                                $", Maximum = {RoundtripTimeValues.Max()}ms" +
-                                ", Average = {0:0.##}ms)", RoundtripTimeValues.Average()); } }
+                    if (kv.Value.RoundtripTimeValues.Count > 0)
+                        Console.WriteLine($"\tTime-outs to {kv.Value.Address}:" +
+                            $"\n\t\tMinimum = {kv.Value.RoundtripTimeValues.Min()}ms" +
+                            $", Maximum = {kv.Value.RoundtripTimeValues.Max()}ms" +
+                            ", Average = {0:0.##}ms)", kv.Value.RoundtripTimeValues.Average()); }
         }
 
         private static void Read_SourceFile()
