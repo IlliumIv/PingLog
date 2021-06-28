@@ -13,7 +13,7 @@ namespace PingLog
                 .Replace(input, "([A-Z])", " $1", System.Text.RegularExpressions.RegexOptions.Compiled).Trim();
         }
 
-        public static string GetaAllMessages(this Exception exception)
+        public static string GetAllMessages(this Exception exception)
         {
             var messages = exception.FromHierarchy(ex => ex.InnerException)
                 .Select(ex => ex.Message);

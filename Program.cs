@@ -28,12 +28,11 @@ namespace PingLog
         public static string? destination_folder;   //Implemented
 #nullable disable
 
-        // public static Dictionary<int, (IPAddress Address, (ulong Sent, ulong Received, ulong Lost) MessagesCounter, List<long> RoundtripTimeValues)> Results;
         public static Dictionary<int, (IPAddress Address, Dictionary<string, ulong> MessagesCounter, List<long> RoundtripTimeValues)> Results;
         public static int AddressFieldWidth = 0;
         public static List<PingTask> pingTasks;
 
-        private static readonly string Name = "pinglog";
+        private static readonly string Name = "PingLog";
         private static List<string> extra;
 
         static void Main(string[] args)
@@ -52,31 +51,52 @@ namespace PingLog
                 "Options:",
                 { "?|help", "Show this message and exit.",
                     v => show_help = true },
-                { "t", $"Specifies {Name} continue sending echo Request messages to the destination until interrupted. To interrupt, display statistics and quit, press CTRL+C. Will display message if specified.",
+                { "t", $"Specifies {Name} continue sending echo Request messages to the destination until interrupted. " +
+                       $"To display statistic and continue, press CTRL+BREAK (CTRL+\\ on Linux). " +
+                       $"To interrupt, display statistics and quit, press CTRL+C. " +
+                       $"Will display message if specified.",
                     v => endless = true },
-                { "n=", $"Specifies the number of echo Request messages be sent. The default is {max_messages}. The maximum is 18,446,744,073,709,551,615.",
+                { "n=", $"Specifies the number of echo Request messages be sent. " +
+                        $"The default is {max_messages}. " +
+                        $"The maximum is 18,446,744,073,709,551,615.",
                     (ulong v) => max_messages = v },
-                { "l=", $"Specifies the length, in bytes, of the Data field in the echo Request messages. The default is {size}. The maximum size is 65,527.",
+                { "l=", $"Specifies the length, in bytes, of the Data field in the echo Request messages. " +
+                        $"The default is {size}. " +
+                        $"The maximum size is 65,527.",
                     (ushort v) => size = v },
-                { "f", $"Specifies that echo Request messages are sent with the Do not Fragment flag in the IP header set to 1 (available on IPv4 only). The echo Request message can't be fragmented by routers in the path to the destination. This parameter is useful for troubleshooting path Maximum Transmission Unit (PMTU) problems.",
+                { "f", $"Specifies that echo Request messages are sent with the Do not Fragment flag in the IP header set to 1 (available on IPv4 only).",
                     v => dont_fragment = true },
-                { "i=", $"Specifies the value of the Time To Live (TTL) field in the IP header for echo Request messages sent. The default is {max_ttl}. The maximum TTL is 255.",
+                { "i=", $"Specifies the value of the Time To Live (TTL) field in the IP header for echo Request messages sent. " +
+                        $"The default is {max_ttl}. " +
+                        $"The maximum TTL is 255.",
                     (byte v) => max_ttl = v },
-                { "w=", $"Specifies the amount of time, in milliseconds, to wait for the echo Reply message corresponding to a given echo Request message. If the echo Reply message is not received within the time-out, the 'Request timed out' error message is displayed. The default time-out is {response_timeout} ({TimeSpan.FromMilliseconds(response_timeout).TotalSeconds} sec). The maximum time-out is 2,147,483,647 (~25 days).",
+                { "w=", $"Specifies the amount of time, in milliseconds, to wait for the echo Reply message corresponding to a given echo Request message. " +
+                        $"The default time-out is {response_timeout} ({TimeSpan.FromMilliseconds(response_timeout).TotalSeconds} sec). " +
+                        $"The maximum time-out is 2,147,483,647 (~25 days).",
                     (int v) => response_timeout = v },
-                { "h", $"Specifies ... Will display message if specified.",
+                { "h", $"Specifies {Name} to hide the results of attempts to send echo Request messages. " +
+                       $"Will display message if specified.",
                     v => hide_output = true },
-                { "s=", $"Specifies ... Will display message if specified and {Name} cannot read the file.",
+                { "s=", $"Specifies path of the file of destinations list. " +
+                        $"Full and relative paths available. " +
+                        $"Will display message if specified.",
                     (string v) => source_file = v },
-                { "d:", $"Specifies ... Will display message if specified.",
+                { "d:", $"Enables writing results of attempts to send echo Request messages to a file. " +
+                        $"The default path is current working directory. " +
+                        $"Full and relative paths available. " +
+                        $"Will display message if specified.",
                     (string v) => {
-                        if (v == null) destination_folder = Directory.GetCurrentDirectory();
+                        if (v == null || v.Length == 0) destination_folder = Directory.GetCurrentDirectory();
                         else destination_folder = v; } },
-                { "W=", $"Specifies the amount of time, in milliseconds, to wait for ... . The default time-out is {request_timeout} ({TimeSpan.FromMilliseconds(request_timeout).TotalSeconds} sec). The maximum time-out is 2,147,483,647 (~25 days).",
+                { "W=", $"Specifies the amount of time, in milliseconds, to wait between sending each new echo Request message. " +
+                        $"The default time-out is {request_timeout} ({TimeSpan.FromMilliseconds(request_timeout).TotalSeconds} sec). " +
+                        $"The maximum time-out is 2,147,483,647 (~25 days).",
                     (int v) => request_timeout = v },
-                { "4", $"Specifies IPv4 used to ping. This parameter is not required to identify the target host with an IPv4 address. It is only required to identify the target host by name.",
+                { "4", $"Specifies IPv4 used to ping. " +
+                       $"This parameter is only required to identify the target host by name.",
                     v => protocol = AddressFamily.InterNetwork },
-                { "6", $"Specifies IPv6 used to ping. This parameter is not required to identify the target host with an IPv6 address. It is only required to identify the target host by name.",
+                { "6", $"Specifies IPv6 used to ping. " +
+                       $"This parameter is only required to identify the target host by name.",
                     v => protocol = AddressFamily.InterNetworkV6 }, };
             #endregion
 
@@ -86,15 +106,30 @@ namespace PingLog
                 return; }
 
             if (source_file != null) Read_SourceFile();
-            if (destination_folder != null) Check_DestinationDirectory();
+            if (destination_folder != null) {
+                Console.Write($"Key d specified");
+                string dirFullPath = Path.GetFullPath(destination_folder);
+                if (!Directory.Exists(dirFullPath)) {
+                    Console.Write($", but directory \"{dirFullPath}\" is not exist. {Name} will try to create directory... ");
+                    try { Directory.CreateDirectory(dirFullPath); }
+                    catch (Exception e) {
+                        Console.WriteLine($"{e.Message}");
+                        return; };
+                    Console.Write($"Success"); };
+
+                destination_folder = dirFullPath;
+                Console.WriteLine($". {Name} will logging output to files in directory \"{destination_folder}{Path.DirectorySeparatorChar}\"."); };
 
             if (show_help || extra.Count == 0) {
                 p.WriteOptionDescriptions(Console.Out);
                 return; }
 
             if (hide_output) Console.WriteLine($"Key h specified. {Name} will hide output for each package.");
-            if (destination_folder != null) Console.WriteLine($"Key d specified. {Name} will logging output to files.");
-            if (endless) Console.WriteLine($"Key t specified. {Name} will continue sending echo Request messages to the destination until interrupted. To interrupt, display statistics and quit, press CTRL+C.\n");
+            if (endless) Console.WriteLine($"Key t specified. {Name} will continue sending echo Request messages to the destination until interrupted. " +
+                                           $"To display statistic and continue, press CTRL+BREAK (CTRL+\\ on Linux). " +
+                                           $"To interrupt, display statistics and quit, press CTRL+C.");
+
+            if (destination_folder != null || hide_output || endless) Console.WriteLine();
 
             pingTasks = new List<PingTask>();
             DoWork = true;
@@ -135,27 +170,19 @@ namespace PingLog
                         Console.WriteLine($"\tTime-outs to {kv.Value.Address}:" +
                             $"\n\t\tMinimum = {kv.Value.RoundtripTimeValues.Min()}ms" +
                             $", Maximum = {kv.Value.RoundtripTimeValues.Max()}ms" +
-                            ", Average = {0:0.##}ms)", kv.Value.RoundtripTimeValues.Average()); }
+                            ", Average = {0:0.##}ms", kv.Value.RoundtripTimeValues.Average()); }
         }
 
         private static void Read_SourceFile()
         {
             if (!File.Exists(source_file)) {
-                Console.WriteLine($"Key s specified, but file \"{source_file}\" is not exist. {Name} will ignore this key.");
+                Console.WriteLine($"Key s specified, but file \"{source_file}\" does not exist. {Name} will ignore this key.");
                 return; }
 
             string line;
             StreamReader source = new StreamReader(source_file);
 
             while ((line = source.ReadLine()) != null) extra.Add(line);
-        }
-
-        private static void Check_DestinationDirectory()
-        {
-            if (!Directory.Exists(destination_folder)) {
-                Console.WriteLine($"Key d specified, but directory \"{destination_folder}\" is not exist. {Name} will ignore this key.");
-                destination_folder = null;
-                return; }
         }
     }
 }
