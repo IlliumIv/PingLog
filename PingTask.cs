@@ -11,7 +11,6 @@ namespace PingLog
 {
     public class PingTask
     {
-        private bool isFinished = false;
         private string log;
         private string destDesc;
         private int index;
@@ -37,7 +36,7 @@ namespace PingLog
                 catch (Exception e) {
                     Console.WriteLine($"{output} failed: {e.Message}");
 
-                    isFinished = true;
+                    CloseTask();
 
                     return; } }
 
@@ -60,11 +59,8 @@ namespace PingLog
                 log = $"ping_{destDesc}_{DateTime.Now}".Replace(" ", "_");
                 log = String.Join(".", log.Split(Path.GetInvalidFileNameChars()));
                 log = Path.Combine(Program.destination_folder + $"{Path.DirectorySeparatorChar}{log}.csv");
-
                 var dir = new FileInfo(log).Directory.FullName;
-
                 if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-
                 File.Create(log).Close();
                 File.AppendAllText(log, $"Date;{destDesc};Bytes [{buffer.Length}];Time;TTL"); }
 
@@ -75,18 +71,15 @@ namespace PingLog
                 case false:
                     for (ulong j = 0; j < Program.max_messages; j++) {
                         if (Program.DoWork == false) break;
-
                         Send(pingSender, buffer, options);
-
                         if (j + 1 != Program.max_messages) await Task.Delay(Program.request_timeout); } break;
 
                 case true:
                     while (Program.DoWork) {
                         Send(pingSender, buffer, options);
-
                         await Task.Delay(Program.request_timeout); } break; }
 
-            isFinished = true;
+            CloseTask();
 
             File.AppendAllText(log, $"\n" +
                 $"\nSent;{Program.Results[index].MessagesCounter["Sent"]}" +
@@ -99,9 +92,11 @@ namespace PingLog
                 $"\nAverage Time;{Program.Results[index].RoundtripTimeValues.Average()}");
         }
 
-        public bool IsFinished()
+        private void CloseTask()
         {
-            return isFinished;
+            Program.pingTasks.Remove(this);
+            // if (Program.pingTasks.Count == 0) Program.pinging = false;
+            if (Program.pingTasks.Count == 0) Program.WhilePinging.Set();
         }
 
         private void Send(Ping pingSender, byte[] buffer, PingOptions options)

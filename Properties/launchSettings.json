@@ -2,7 +2,7 @@
   "profiles": {
     "PingLog": {
       "commandName": "Project",
-      "commandLineArgs": "127.0.0.1 ::1 google.ru /t /d"
+      "commandLineArgs": "127.0.0.1 ::1 google.ru /t /h"
     }
   }
 }
