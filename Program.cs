@@ -30,12 +30,12 @@ namespace PingLog
         public static string? destination_folder;   //Implemented
 #nullable disable
 
-        public static Dictionary<int, (IPAddress Address, Dictionary<string, ulong> MessagesCounter, List<long> RoundtripTimeValues)> Results;
+        public static Dictionary<int, (IPAddress Address, Dictionary<string, ulong> MessagesCounter, HashSet<long> RoundtripTimeValues)> Results;
         public static int AddressFieldWidth = 0;
-        public static List<PingTask> pingTasks;
+        public static ConcurrentHashSet<PingTask> pingTasks;
 
         private static readonly string Name = "PingLog";
-        private static List<string> extra;
+        private static HashSet<string> extra;
 
         static void Main(string[] args)
         {
@@ -119,7 +119,7 @@ namespace PingLog
             };
             #endregion
 
-            try { extra = p.Parse(args); }
+            try { extra = p.Parse(args).ToHashSet(); }
             catch (OptionException e)
             {
                 Console.Write($"{Name}: {e.Message} Try `{Name} --help' for more information.");
@@ -160,10 +160,10 @@ namespace PingLog
 
             if (destination_folder != null || hide_output || endless) Console.WriteLine();
 
-            pingTasks = new List<PingTask>();
+            pingTasks = new ConcurrentHashSet<PingTask>();
             DoWork = true;
 
-            Results = new Dictionary<int, (IPAddress Address, Dictionary<string, ulong> MessagesCounter, List<long> RoundtripTimeValues)>();
+            Results = new Dictionary<int, (IPAddress Address, Dictionary<string, ulong> MessagesCounter, HashSet<long> RoundtripTimeValues)>();
 
             foreach (string s in extra) pingTasks.Add(new PingTask(s));
             foreach (var t in pingTasks) { new Task(async () => t.Run()).Start(); }
@@ -175,7 +175,13 @@ namespace PingLog
         private static void Console_CancelKeyPress(object sender, ConsoleCancelEventArgs e)
         {
             e.Cancel = true;
-            if (e.SpecialKey == ConsoleSpecialKey.ControlC) DoWork = false;
+
+            if (e.SpecialKey == ConsoleSpecialKey.ControlC)
+            {
+                DoWork = false;
+                if (pingTasks != null) foreach (var task in pingTasks) if (task == null) pingTasks.Remove(task);
+            }
+
             if (e.SpecialKey == ConsoleSpecialKey.ControlBreak)
             {
                 ShowResults();

@@ -42,7 +42,7 @@ namespace PingLog
 
             Console.WriteLine($"{output} with {Program.size} bytes of data...");
 
-            Program.Results.Add(GetHashCode(), (address, new Dictionary<string, ulong> { { "Sent", 0 }, { "Received", 0 }, { "Lost", 0 } } , new List<long>()));
+            Program.Results.Add(GetHashCode(), (address, new Dictionary<string, ulong> { { "Sent", 0 }, { "Received", 0 }, { "Lost", 0 } } , new HashSet<long>()));
 
             if (address.ToString().Length > Program.AddressFieldWidth)
                 Program.AddressFieldWidth = address.ToString().Length;
