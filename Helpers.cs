@@ -16,7 +16,7 @@ namespace PingLog
         {
             var messages = exception.FromHierarchy(ex => ex.InnerException)
                 .Select(ex => ex.Message);
-            return String.Join(" ", messages);
+            return string.Join(" ", messages);
         }
 
         public static IEnumerable<TSource> FromHierarchy<TSource>(

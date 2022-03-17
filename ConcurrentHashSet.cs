@@ -8,8 +8,8 @@ namespace PingLog
     // https://stackoverflow.com/questions/4306936/how-to-implement-concurrenthashset-in-net
     public class ConcurrentHashSet<T> : IDisposable
     {
-        private readonly ReaderWriterLockSlim _lock = new ReaderWriterLockSlim(LockRecursionPolicy.SupportsRecursion);
-        private readonly HashSet<T> _hashSet = new HashSet<T>();
+        private readonly ReaderWriterLockSlim _lock = new(LockRecursionPolicy.SupportsRecursion);
+        private readonly HashSet<T> _hashSet = new();
 
         #region Implementation of ICollection<T> ...ish
         public bool Add(T item)
@@ -98,7 +98,11 @@ namespace PingLog
         #region Dispose
         public void Dispose()
         {
-            if (_lock != null) _lock.Dispose();
+            if (_lock != null)
+            {
+                _lock.Dispose();
+                GC.SuppressFinalize(this);
+            }
         }
         #endregion
     }

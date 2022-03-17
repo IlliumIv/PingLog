@@ -11,9 +11,9 @@ namespace PingLog
 {
     public class PingTask
     {
-        private string log;
-        private string destDesc;
-        private int index;
+        string log;
+        readonly string destDesc;
+        readonly int index;
 
         public PingTask(string s)
         {
@@ -22,27 +22,33 @@ namespace PingLog
             index = GetHashCode();
 
             if (IPAddress.TryParse(destDesc, out IPAddress address)) { }
-            else {
-                try {
+            else
+            {
+                try
+                {
                     IPHostEntry hostEntry = Dns.GetHostEntry(destDesc);
 
-                    if (Program.protocol != AddressFamily.Unspecified)
-                        address = hostEntry.AddressList.First(a => a.AddressFamily == Program.protocol);
+                    if (Program.ProtocolVersion != AddressFamily.Unspecified)
+                        address = hostEntry.AddressList.First(a => a.AddressFamily == Program.ProtocolVersion);
                     else address = hostEntry.AddressList.First();
 
                     output += $" [{address}]";
-                    destDesc += $" [{address}]"; }
+                    destDesc += $" [{address}]";
+                }
 
-                catch (Exception e) {
+                catch (Exception e)
+                {
                     Console.WriteLine($"{output} failed: {e.Message}");
 
                     CloseTask();
 
-                    return; } }
+                    return;
+                }
+            }
 
-            Console.WriteLine($"{output} with {Program.size} bytes of data...");
+            Console.WriteLine($"{output} with {Program.PackageSize} bytes of data...");
 
-            Program.Results.Add(GetHashCode(), (address, new Dictionary<string, ulong> { { "Sent", 0 }, { "Received", 0 }, { "Lost", 0 } } , new HashSet<long>()));
+            Program.Results.Add(GetHashCode(), (address, new Dictionary<string, ulong> { { "Sent", 0 }, { "Received", 0 }, { "Lost", 0 } }, new HashSet<long>()));
 
             if (address.ToString().Length > Program.AddressFieldWidth)
                 Program.AddressFieldWidth = address.ToString().Length;
@@ -50,34 +56,41 @@ namespace PingLog
 
         public async Task Run()
         {
-            var i = GetHashCode();
+            byte[] buffer = new byte[Program.PackageSize];
 
-            byte[] buffer = new byte[Program.size];
-            string address = destDesc;
-
-            if (Program.destination_folder != null) {
+            if (Program.DestinationFolder != null)
+            {
                 log = $"ping_{destDesc}_{DateTime.Now}".Replace(" ", "_");
                 log = String.Join(".", log.Split(Path.GetInvalidFileNameChars()));
-                log = Path.Combine(Program.destination_folder + $"{Path.DirectorySeparatorChar}{log}.csv");
+                log = Path.Combine(Program.DestinationFolder + $"{Path.DirectorySeparatorChar}{log}.csv");
                 var dir = new FileInfo(log).Directory.FullName;
                 if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
                 File.Create(log).Close();
-                File.AppendAllText(log, $"Date;{destDesc};Bytes [{buffer.Length}];Time;TTL"); }
+                File.AppendAllText(log, $"Date;{destDesc};Bytes [{buffer.Length}];Time;TTL");
+            }
 
-            PingOptions options = new PingOptions(Program.max_ttl, Program.dont_fragment);
-            Ping pingSender = new Ping();
+            PingOptions options = new(Program.Ttl, Program.AllowPackageFragmentation);
+            Ping pingSender = new();
 
-            switch (Program.endless) {
+            switch (Program.Endless)
+            {
                 case false:
-                    for (ulong j = 0; j < Program.max_messages; j++) {
-                        if (Program.DoWork == false) break;
+                    for (ulong j = 0; j < Program.MaximumPackages; j++)
+                    {
+                        if (Program.ShouldContinue == false) break;
                         Send(pingSender, buffer, options);
-                        if (j + 1 != Program.max_messages) await Task.Delay(Program.request_timeout); } break;
+                        if (j + 1 != Program.MaximumPackages) await Task.Delay(Program.RequestTimeout);
+                    }
+                    break;
 
                 case true:
-                    while (Program.DoWork) {
+                    while (Program.ShouldContinue)
+                    {
                         Send(pingSender, buffer, options);
-                        await Task.Delay(Program.request_timeout); } break; }
+                        await Task.Delay(Program.RequestTimeout);
+                    }
+                    break;
+            }
 
             CloseTask();
 
@@ -85,7 +98,7 @@ namespace PingLog
                 $"\nSent;{Program.Results[index].MessagesCounter["Sent"]}" +
                 $"\nReceived;{Program.Results[index].MessagesCounter["Received"]}" +
                 $"\nLost;{Program.Results[index].MessagesCounter["Lost"]}" +
-                $"\n% Loss;={((float)Program.Results[index].MessagesCounter["Lost"]/(float)Program.Results[index].MessagesCounter["Sent"])*100}" +
+                $"\n% Loss;={((float)Program.Results[index].MessagesCounter["Lost"] / (float)Program.Results[index].MessagesCounter["Sent"]) * 100}" +
                 $"\n" +
                 $"\nMinimum Time;{Program.Results[index].RoundtripTimeValues.Min()}" +
                 $"\nMaximum Time;{Program.Results[index].RoundtripTimeValues.Max()}" +
@@ -94,9 +107,9 @@ namespace PingLog
 
         private void CloseTask()
         {
-            Program.pingTasks.Remove(this);
+            Program.Tasks.Remove(this);
             // if (Program.pingTasks.Count == 0) Program.pinging = false;
-            if (Program.pingTasks.Count == 0) Program.WhilePinging.Set();
+            if (Program.Tasks.Count == 0) Program.WhilePinging.Set();
         }
 
         private void Send(Ping pingSender, byte[] buffer, PingOptions options)
@@ -108,10 +121,12 @@ namespace PingLog
             Program.Results[index].MessagesCounter["Sent"]++;
             Program.Results[index].MessagesCounter["Lost"]++;
 
-            try {
-                reply = pingSender.Send(Program.Results[index].Address, Program.response_timeout, buffer, options);
+            try
+            {
+                reply = pingSender.Send(Program.Results[index].Address, Program.ResponseTimeout, buffer, options);
 
-                if (reply.Status == IPStatus.Success) {
+                if (reply.Status == IPStatus.Success)
+                {
                     Program.Results[index].MessagesCounter["Received"]++;
                     Program.Results[index].MessagesCounter["Lost"]--;
                     Program.Results[index].RoundtripTimeValues.Add(reply.RoundtripTime);
@@ -122,24 +137,34 @@ namespace PingLog
                                 $";{reply.Buffer.Length}" +
                                 $";{reply.RoundtripTime}";
 
-                    if (reply.Options != null) {
+                    if (reply.Options != null)
+                    {
                         console_output += $"\tTTL={reply.Options.Ttl}";
-                        log_output += $";{reply.Options.Ttl}"; } }
-                else {
+                        log_output += $";{reply.Options.Ttl}";
+                    }
+                }
+                else
+                {
                     console_output += $"Reply from {Program.Results[index].Address.ToString().PadRight(Program.AddressFieldWidth)}:" +
                         $"\t{reply.Status.ToString().SplitCamelCase()}";
                     log_output += $";{reply.Status.ToString().SplitCamelCase()}";
 
-                    if (reply.Status == IPStatus.TimedOut) {
-                        console_output += $"\ttime={Program.response_timeout}ms";
-                        log_output += $";{Program.response_timeout}"; } } }
+                    if (reply.Status == IPStatus.TimedOut)
+                    {
+                        console_output += $"\ttime={Program.ResponseTimeout}ms";
+                        log_output += $";{Program.ResponseTimeout}";
+                    }
+                }
+            }
 
-            catch (Exception e) {
+            catch (Exception e)
+            {
                 console_output = $"{DateTime.Now}\t {e.GetAllMessages()}";
-                log_output += $";{e.GetAllMessages()}"; }
+                log_output += $";{e.GetAllMessages()}";
+            }
 
-            if (Program.destination_folder != null) File.AppendAllTextAsync(log, "\n" + log_output);
-            if (!Program.hide_output) Console.WriteLine(console_output);
+            if (Program.DestinationFolder != null) File.AppendAllTextAsync(log, "\n" + log_output);
+            if (!Program.ShouldHideOutput) Console.WriteLine(console_output);
         }
     }
 }
