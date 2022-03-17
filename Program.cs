@@ -34,7 +34,7 @@ namespace PingLog
         public static int AddressFieldWidth = 0;
         public static ConcurrentHashSet<PingTask> pingTasks;
 
-        private static readonly string Name = "PingLog";
+        private static string Name => typeof(Program).Assembly.GetName().Name;
         private static HashSet<string> extra;
 
         static void Main(string[] args)
